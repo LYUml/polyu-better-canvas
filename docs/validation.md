@@ -1,25 +1,28 @@
-# v0.1 验收记录
+# Validation record
 
-验收平台：Apple Silicon Mac，2026-10-12。
+## v0.2.0 · 2026-10-13
 
-- React / TypeScript / Vite 发布构建通过。
-- Rust 25 项测试通过：文件保护、账号工作区隔离、取消、日期来源核对、三种 AI 模拟接口及异常响应、任务去重、香港时间和 ICS 格式。
-- 原生合成文字 PDF、扫描 PDF 的页码及 OCR 测试通过。
-- 隔离测试 Keychain 的创建、读取、更新及删除通过。
-- 打包的 `.app` 深度签名验证通过；DMG 校验通过。
-- 桌面演示流程验证：读取文件、生成建议、确认、编辑任务、完成状态及月视图。
-- Tauri 原生日历保存对话框已显示；外部日历实际导入尚未验收。
-- 真实 PolyU 登录成功，真实课程下载已开始；最终同步结果另列下方。
+Platform: Apple Silicon Mac.
 
-真实 syllabus 的 AI 识别效果按计划后置。Developer ID 签名、公证、Intel 与 Windows 后置。
+- Repository and project folder renamed to `polyu-better-canvas`. The workspace database was backed up before updating library paths; existing downloads and account identity are retained.
+- English interface, native helper copy, errors, calendar metadata, AI instructions, README and user guide.
+- Modular library with material-type sections, source module grouping, manual overrides and Icons/List/Columns views.
+- All 27 core tests passed. Classification checks cover Lecture/Lec, Tutorial/Tut, assignments, exams, syllabi, labs, module folder inference, page snapshots and uncertain files.
+- Upgrade test checks stable IDs, connected account state, legacy category conversion and preservation of user-authored text.
+- Synthetic browser fixtures provide Lectures, Tutorials, Assignments and other sections. Preview mode does not call AI or modify files.
 
-## 真实 Canvas 同步
+- Synthetic text/scanned PDF, isolated Keychain CRUD and native system file icon checks passed.
+- English copy and layout checked across all six browser pages. Icons, List and Columns, inspector, AI consent and Escape dismissal were verified. No overflow at the 900 px desktop minimum.
+- The packaged Mac app opens with the 326 existing entries and account state retained. Real course sections and native file icons were checked; a tutorial PDF was read locally. All 269 tracked downloads still match their on-disk hashes.
+- App deep-signature verification and DMG verification passed. Installation artifacts remain ad-hoc signed.
 
-用户完成学校登录后，遍历 10 门课程，首次同步结束。最终同步清单 269 项，磁盘存在且 SHA-256 一致 269 项；资料库共 326 项（含已有资料及合成演示）。作业日期进入待确认。存在部分不可读来源，最后观察到 23 处；首版仅提供失败计数，逐项失败原因仍需补充。已有课程资料保留，新下载按 Canvas ID 建立目录。
+## Previous acceptance · 2026-10-12
 
-## v0.1.1 界面改版（2026-10-13）
+- 25 core tests passed for file protection, workspace isolation, cancellation, source evidence, three mock AI adapters, task deduplication, Hong Kong dates and ICS formatting.
+- Synthetic text and scanned PDF page/OCR checks passed.
+- Isolated Keychain create/read/update/delete checks passed.
+- Native app launch, file reading, suggestion review, task editing, completion and calendar were checked.
+- Real PolyU sign-in succeeded. Ten courses were traversed, and the final download manifest had 269 entries with matching on-disk SHA-256 hashes. The library had 326 entries including existing materials and synthetic demo content.
+- Some sources or files could not be read. The last observed failure count was 23; per-source reporting still needs work.
 
-重构六个页面，采用官网红色系与 macOS 工作区布局。使用合成资料完成六页视觉检查、文件选择及检查器切换、AI 发送确认弹窗、Escape 关闭与焦点恢复检查。900 px 宽度下文件选择会折叠课程栏，检查器保持可用，页面没有横向溢出。浏览器合成预览仅限开发构建，不接通外部服务。真实 Canvas 同步结果沿用上一版记录，本次不重新发送课程资料给 AI。
-
-本次发布构建及 25 项核心测试通过。v0.1.1 在原生 Mac 窗口启动成功，读取既有 326 项资料；合成演示文件的内联正文读取、任务编辑弹窗及 Escape 关闭已在原生 App 检查。应用深度签名验证通过。
-DMG 校验通过；发行包保留 ad-hoc 签名，尚未公证。
+Real syllabus AI accuracy and external calendar import remain unverified. The app is ad-hoc signed, not notarized. Developer ID signing, Windows and Intel Mac support are deferred.

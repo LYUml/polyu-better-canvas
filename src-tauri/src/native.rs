@@ -44,14 +44,14 @@ pub async fn helper(
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|_| "原生组件无法启动，请重新安装 App".to_string())?;
+        .map_err(|_| "Cannot start the native helper. Reinstall the app.".to_string())?;
     let pid = child.id().unwrap_or(0);
     core.pids.lock().unwrap().push(pid);
     let _tracked = TrackedPid {
         core: core.clone(),
         pid,
     };
-    let mut stdin = child.stdin.take().ok_or("原生通信失败")?;
+    let mut stdin = child.stdin.take().ok_or("Native communication failed")?;
     stdin
         .write_all(request.to_string().as_bytes())
         .await
@@ -62,19 +62,19 @@ pub async fn helper(
         child.wait_with_output(),
     )
     .await
-    .map_err(|_| "原生操作超时".to_string())?
+    .map_err(|_| "Native operation timed out".to_string())?
     .map_err(err)?;
 
-    let value: Value =
-        serde_json::from_slice(&output.stdout).map_err(|_| "原生组件未返回有效结果".to_string())?;
+    let value: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "Native helper returned an invalid response".to_string())?;
     if value["version"] != 1 {
-        return Err("原生协议版本不匹配".into());
+        return Err("Native protocol version mismatch".into());
     }
     if let Some(message) = value["error"].as_str() {
         return Err(message.into());
     }
     if !output.status.success() {
-        return Err("原生操作未完成".into());
+        return Err("Native operation did not finish".into());
     }
     Ok(value)
 }
@@ -99,7 +99,7 @@ pub async fn read(app: &tauri::AppHandle, core: &Arc<Core>, file: &Value) -> Res
     let ext = s(file, "ext");
     let cache = core.data.join("cache").join(s(file, "workspace"));
     std::fs::create_dir_all(&cache).map_err(err)?;
-    let cachefile = cache.join(format!("{}-reader1.json", s(file, "hash")));
+    let cachefile = cache.join(format!("{}-reader2.json", s(file, "hash")));
     if cachefile.exists() {
         let bytes = std::fs::read(&cachefile).map_err(err)?;
         return serde_json::from_slice(&bytes).map_err(err);
@@ -135,7 +135,7 @@ pub async fn read(app: &tauri::AppHandle, core: &Arc<Core>, file: &Value) -> Res
     } else if ["txt", "md", "html", "htm"].contains(&ext.as_str()) {
         let bytes = std::fs::read(path).map_err(err)?;
         if bytes.len() > 4 * 1024 * 1024 {
-            return Err("文本超过 4 MB，请拆分后分析".into());
+            return Err("Text exceeds 4 MB. Split it before analysis.".into());
         }
         let raw = String::from_utf8_lossy(&bytes).to_string();
         let text = if ext == "html" || ext == "htm" {
@@ -143,9 +143,11 @@ pub async fn read(app: &tauri::AppHandle, core: &Arc<Core>, file: &Value) -> Res
         } else {
             raw
         };
-        json!({"version":1,"pages":[{"page":1,"text":text,"method":"本地文字"}]})
+        json!({"version":1,"pages":[{"page":1,"text":text,"method":"Local text"}]})
     } else {
-        return Err("本版读取 PDF、TXT、Markdown、HTML；Office 文件请先导出 PDF".into());
+        return Err(
+            "Supports PDF, TXT, Markdown and HTML. Convert Office documents to PDF first.".into(),
+        );
     };
     std::fs::write(cachefile, result.to_string()).map_err(err)?;
     Ok(result)

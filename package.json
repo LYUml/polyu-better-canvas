@@ -1,6 +1,6 @@
 {
-  "name": "polyu-canvas-localized",
-  "version": "0.1.1",
+  "name": "polyu-better-canvas",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,4 +1,4 @@
-# PolyU Canvas Localized · Interface
+# PolyU Better Canvas · Interface
 
 ## Direction
 
@@ -39,6 +39,14 @@ Use macOS system typography through `-apple-system`, with PingFang SC for Chines
 - AI consent and task editing retain native dialog focus trapping, Escape dismissal and focus restoration.
 - Red should guide attention, not fill the entire interface. Status and event-type colors may have restrained semantic hues.
 - Maintain visible keyboard focus, named icon buttons, source evidence and user confirmation before AI transmission.
+
+## Material organization
+
+Default to material sections: Overview, Lectures, Tutorials, Assignments, Exams, Labs, Readings, Pages and Unsorted. Keep Canvas module grouping as a separate view. Use source filenames and directories for initial inference; user overrides take precedence. Uncertain files stay Unsorted. Do not move original files to implement virtual folders.
+
+Offer Icons, List and Columns in a compact segmented toolbar. Icons show section folders first, then material icons. List shows section rows or file metadata. Columns exposes section navigation beside the file list and inspector. Persist the view preference. Use system file icons in the Mac app and a lightweight placeholder in the browser preview.
+
+Course names should omit trailing download IDs; downloaded display names omit the app-added Canvas ID prefix. Original paths remain available in the inspector. All built-in copy is English; user and course content remains in its source language.
 
 ## Preview and verification
 

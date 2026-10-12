@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PolyU Canvas Localized",
-  "version": "0.1.1",
+  "productName": "PolyU Better Canvas",
+  "version": "0.2.0",
   "identifier": "local.polyu.canvas.localized",
   "build": {
     "beforeDevCommand": "npm run native && npm run dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PolyU Canvas Localized",
+        "title": "PolyU Better Canvas",
         "width": 1240,
         "height": 860,
         "minWidth": 900,

@@ -12,7 +12,7 @@ for item in packages:
 report=['# Third-party dependencies and license texts\n','Rust dependencies locked in Cargo.lock; JS dependencies locked in package-lock.json.\n']
 texts={}
 for package in sorted(metadata['packages'],key=lambda x:x['name']):
- if package['name']=='polyu-canvas-localized':continue
+ if package['name']=='polyu-better-canvas':continue
  report.append(f"- {package['name']} {package['version']}: {package.get('license') or 'see source'}, {package.get('repository') or 'https://crates.io/crates/'+package['name']}\n")
  folder=Path(package['manifest_path']).parent
  for p in list(folder.glob('LICENSE*'))+list(folder.glob('COPYING*')):

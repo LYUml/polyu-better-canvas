@@ -59,7 +59,7 @@ func recognize(_ image: CGImage) throws -> ([String], [Float]) {
 
 func pdfPages(_ path: String, textOnly: Bool) throws -> [[String: Any]] {
     guard let document = PDFDocument(url: URL(fileURLWithPath: path)), !document.isLocked else {
-        throw NSError(domain: "DocumentReader", code: 1, userInfo: [NSLocalizedDescriptionKey: "PDF 无法打开或受密码保护"])
+        throw NSError(domain: "DocumentReader", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot open PDF; it may be password-protected"])
     }
     var pages: [[String: Any]] = []
     for index in 0..<document.pageCount {
@@ -74,7 +74,7 @@ func pdfPages(_ path: String, textOnly: Bool) throws -> [[String: Any]] {
                 return (string.replacingOccurrences(of: "\n", with: " "), selection.bounds(for: page))
             }
             let rows = orderedRows(blocks)
-            var result: [String: Any] = ["page": index + 1, "text": text, "rows": rows, "method": "PDF 文字与版面", "readable": !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "lowConfidence": false, "processed": true, "textOnly": textOnly]
+            var result: [String: Any] = ["page": index + 1, "text": text, "rows": rows, "method": "PDF text and layout", "readable": !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "lowConfidence": false, "processed": true, "textOnly": textOnly]
             // OCR every page, including screenshots embedded beside normal text.
             if !textOnly { do {
                 let scale = min(3, 2000 / max(bounds.width, bounds.height))
@@ -84,12 +84,12 @@ func pdfPages(_ path: String, textOnly: Bool) throws -> [[String: Any]] {
                     result["ocrRows"] = recognized.0
                     result["ocrRowConfidences"] = recognized.1
                     result["ocrLowConfidence"] = !recognized.1.isEmpty && recognized.1.allSatisfy { $0 < 0.75 }
-                    result["method"] = text.isEmpty ? "扫描页 OCR" : "PDF 文字、版面与 OCR"
+                    result["method"] = text.isEmpty ? "Scanned-page OCR" : "PDF text, layout and OCR"
                     if !recognized.0.isEmpty { result["readable"] = true }
                 } else {
-                    result["issues"] = ["本页图片无法渲染，应用将在下次同步重试"]
+                    result["issues"] = ["Could not render this page image. Try reading it again."]
                 }
-            } catch { result["issues"] = ["本页图片文字识别未完成，应用将在下次同步重试"] } }
+            } catch { result["issues"] = ["OCR did not finish for this page. Try reading it again."] } }
             let notes = page.annotations.compactMap { $0.contents }.filter { !$0.isEmpty }
             result["annotations"] = notes
             result["links"] = page.annotations.compactMap { $0.url?.absoluteString }
@@ -108,14 +108,14 @@ do {
     if suffix == "pdf" { pages = try pdfPages(path, textOnly: textOnly) }
     else {
         guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil) else {
-            throw NSError(domain: "DocumentReader", code: 3, userInfo: [NSLocalizedDescriptionKey: "图片格式无法读取"])
+            throw NSError(domain: "DocumentReader", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unsupported image format"])
         }
         var images: [[String: Any]] = []
         for frame in 0..<CGImageSourceGetCount(source) {
             guard let cg = CGImageSourceCreateImageAtIndex(source, frame, nil) else { continue }
             let recognized = try recognize(cg)
             images.append(["page": frame + 1, "text": recognized.0.joined(separator: "\n"), "rows": recognized.0,
-                           "rowConfidences": recognized.1, "method": "图片 OCR", "lowConfidence": !recognized.1.isEmpty && recognized.1.allSatisfy { $0 < 0.75 }, "readable": !recognized.0.isEmpty, "processed": true])
+                           "rowConfidences": recognized.1, "method": "Image OCR", "lowConfidence": !recognized.1.isEmpty && recognized.1.allSatisfy { $0 < 0.75 }, "readable": !recognized.0.isEmpty, "processed": true])
         }
         pages = images
     }

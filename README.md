@@ -1,90 +1,102 @@
-# PolyU Canvas Localized
+# PolyU Better Canvas
 
-面向 Apple Silicon Mac 的本地学习工作台。连接 PolyU Canvas，把课程资料下载到自己的文件夹，再用自己的 AI 提取考试、作业 DDL 和学习安排。所有建议经过核对后才进入任务与日历。
+A local study workspace for PolyU Canvas on **Apple Silicon Macs running macOS 13 or later**. Download course materials, organize them into useful sections, review AI suggestions, and manage tasks and your calendar.
 
-当前版本：**v0.1.1 桌面原型**，支持 **macOS 13+**。学生制作，非香港理工大学官方应用。
+**Version 0.2.0 · Desktop prototype.** Student-built; not an official PolyU application.
 
-## 界面
+## Library
 
-采用 macOS 风格的侧边栏、文件检查器、任务列表和月历，红色系参考 PolyU 官网。界面规范见 [DESIGN.md](DESIGN.md)。以下截图使用合成资料。
+The library organizes materials into **Overview, Lectures, Tutorials, Assignments, Exams, Labs, Readings, Pages, and Unsorted**. Classification uses filenames and source folders; you can override it in the inspector. Unknown files remain Unsorted.
 
-![启动台](docs/screenshots/home.jpg)
+- **Material type** groups lecture slides, tutorials, assignment briefs and other resources into separate sections.
+- **Canvas module** preserves source module folders for browsing course structure.
+- **Icons, List, and Columns** offer Finder-style navigation. The app remembers your view preference.
+- Mac file icons come from the system. Selecting a file opens its text and source information in the inspector.
+- Canvas IDs are hidden from displayed download filenames. Original filenames and paths remain available in the inspector.
+- Sections are virtual. Classification does not move, rename, or duplicate your files.
 
-![资料库与文件检查器](docs/screenshots/library.jpg)
+![Library sections — synthetic data](docs/screenshots/library.jpg)
 
-## 可以做什么
+## Other features
 
-- **Canvas 同步**：学校原生登录窗口及 MFA；发现课程、模块和页面附件并下载到本地。支持手动同步，App 打开期间每小时检查一次。
-- **资料库**：接入已有资料文件夹，搜索、预览、打开文件和分类。PDF 本地提取文字与页码，扫描页使用 OCR；支持 TXT、Markdown、HTML。
-- **自己的 AI**：兼容 OpenAI 风格接口、Anthropic、Ollama。选择文件并确认发送范围后才调用服务。
-- **待确认**：保留来源原文、页码或文本位置；编辑、确认或忽略日期与整理建议。周次、未知年份和冲突需要人工核对。
-- **任务与日历**：管理有日期或无日期的任务，查看月历，导出已确认、有日期且未完成的安排为 `.ics`。
-- **合成演示**：可主动载入和移除，便于不连接账号时体验流程。
+- **Canvas:** sign in through a dedicated school WebKit window, including MFA. Sync course files, module attachments, pages and assignment dates. Check manually or once an hour while the app is open.
+- **Documents:** local text extraction and page references for PDFs; Vision OCR for scanned pages. TXT, Markdown and HTML are also supported.
+- **Your AI:** OpenAI-compatible endpoints, Anthropic and local Ollama. Select a document and approve sending extracted text before calling a provider.
+- **Review:** inspect source excerpts and dates before accepting suggestions. Unknown dates, week numbers and conflicts remain unresolved.
+- **Tasks and Calendar:** dated or undated tasks, completion states, month view and a monthly agenda. Export confirmed, dated, incomplete items as ICS.
+- **Demo:** load and remove synthetic materials without connecting an account.
 
-文件整理目前使用分类标签与改名建议，不自动移动或改名原文件。老师更新资料时保留用户修改过的副本，远端新版另存；自动同步不恢复用户已经删除的下载文件。
+The interface, built-in messages, native helper dialogs, and AI instructions are in English. Course content and user-authored text retain their original language.
 
-## 安装与使用
+![Home — synthetic data](docs/screenshots/home.jpg)
 
-使用打包的 `.dmg`，将 App 拖到 Applications 后启动。运行安装包无需 Node、Rust、Python 或 Chrome。
+## Install and use
 
-1. 选择已有资料文件夹，或创建默认资料库。已有文件只建立索引。
-2. 点击「连接 Canvas」，在学校窗口完成登录与 MFA，再点击「同步 Canvas」。
-3. 在资料库选择文件，本地读取后使用日期规则，或在设置中配置自己的 AI 并确认发送正文。
-4. 到「待确认」核对来源与日期，确认后加入任务和日历。
-5. 点击「导出日历」保存 ICS，再在日历应用中导入。
+Open the built `.dmg`, drag **PolyU Better Canvas** into Applications, and launch it. The packaged app does not require Node, Rust, Python or Chrome.
 
-无需 AI 密钥也可以手动管理任务。聊天产品订阅不一定包含 API，请使用服务商提供的 API 凭据。
+1. Choose an existing course folder or create the default library.
+2. Connect Canvas and complete school sign-in and MFA, then click **Sync Canvas**.
+3. Browse a course and open a material section. Select a file to preview its text or adjust its material type.
+4. Optionally configure your AI provider in Settings and approve analyzing a selected document.
+5. Review extracted suggestions before adding them to Tasks and Calendar.
+6. Export an ICS file and import it using your calendar application.
 
-原型使用 ad-hoc 签名，尚未 Apple 公证，首次打开可能出现开发者验证提示。正式公开分发仍需 Developer ID 签名与公证。详细步骤见 [使用说明](docs/使用说明.md)。安装包由本地 `npm run bundle` 生成，不提交到源码仓库。
+Without an AI key, you can use local date rules and manual tasks. A chat subscription may not include API access.
 
-## 数据与隐私
+This prototype is ad-hoc signed and not notarized. macOS may ask you to allow the app in Privacy & Security on first launch. Public distribution will require Developer ID signing and notarization. See the [user guide](docs/user-guide.md).
 
-| 数据 | 保存位置 |
+## Data and privacy
+
+| Data | Location |
 | --- | --- |
-| 默认资料目录 | `~/Documents/PolyU Canvas Localized/Local/`，也可自行选择 |
-| 索引、安排、设置与缓存 | `~/Library/Application Support/local.polyu.canvas.localized/` |
-| Canvas 会话与 AI 密钥 | macOS Keychain，服务名 `local.polyu.canvas.localized.v1` |
+| New default library | `~/Documents/PolyU Better Canvas/Local/` or a folder you choose |
+| Index, tasks, settings and cache | `~/Library/Application Support/local.polyu.canvas.localized/` |
+| Canvas session and AI keys | macOS Keychain, service `local.polyu.canvas.localized.v1` |
 
-不同 Canvas 账号使用独立工作区。退出登录停止采集、清除该账号会话和读取缓存，保留资料及学习安排。关闭 App 后停止检查，不安装常驻后台服务。
+The internal app identifier, Keychain service and existing calendar UIDs stay stable across the project rename so upgrades preserve accounts, tasks and calendar identities. Existing library folders remain where you chose them.
 
-AI 分析前会要求确认发送文件正文；云端请求最多使用 60,000 字符。课程资料、账号数据、密钥及本地数据库不进入源码或安装包。
+Downloaded files are tracked by Canvas IDs and hashes. Remote updates preserve locally edited copies and save the newer version separately. Automatic sync does not restore files you deleted locally; Settings provides an explicit restore action.
 
-## 技术栈
+Different Canvas accounts use separate workspaces. Signing out stops collection and clears that session and reading cache, while keeping downloaded files and study plans. Closing the app stops scheduled checks; no persistent background service is installed.
 
-| 部分 | 实现 |
-| --- | --- |
-| 桌面容器 | Tauri 2 |
-| 界面 | React、TypeScript、Vite |
-| 核心 | Rust：Canvas、文件管理、AI 调用、后台作业与 ICS |
-| 索引与安排 | SQLite |
-| Mac 原生组件 | Swift：WebKit 登录、Keychain、PDFKit/Vision |
-| 通信 | Tauri commands/events；Swift 通过版本化 JSON 私有管道通信 |
+Cloud AI receives only text you explicitly approve, up to 60,000 characters. Canvas credentials are not sent to AI. Course files, credentials, databases and build outputs are excluded from Git.
 
-发布版不依赖本地 HTTP 服务。
+## Development
 
-## 开发与打包
-
-需要 Apple Silicon Mac、Node.js、Rust stable 和 Xcode Command Line Tools。
+Requires an Apple Silicon Mac, Node.js, Rust stable and Xcode Command Line Tools.
 
 ```sh
 npm ci
 npm run desktop
 ```
 
-原生组件和应用图标会在启动、打包前自动生成。用 `npm run dev` 启动浏览器预览后，访问 `http://127.0.0.1:1420/?preview=1` 可查看合成资料界面；文件、Canvas 和 AI 操作需在桌面 App 中使用。
+To preview the interface with fictional data:
+
+```sh
+npm run dev
+```
+
+Open `http://127.0.0.1:1420/?preview=1`. Synthetic preview mode is limited to development browsers; it cannot sync Canvas, change files, or call AI.
 
 ```sh
 npm run bundle
 ```
 
-输出：
+Native helpers and icons are generated automatically. Outputs:
 
-- App：`src-tauri/target/release/bundle/macos/PolyU Canvas Localized.app`
-- DMG：`src-tauri/target/release/bundle/dmg/`
+- App: `src-tauri/target/release/bundle/macos/PolyU Better Canvas.app`
+- DMG: `src-tauri/target/release/bundle/dmg/`
 
-核心目录：`src/` 为界面，`src-tauri/src/` 为 Rust 核心，`src-tauri/native/` 为 Swift 组件，`scripts/` 为构建与测试工具。
+| Directory | Responsibility |
+| --- | --- |
+| `src/` | React interface and library navigation |
+| `src-tauri/src/` | Rust core, SQLite index, classification, Canvas, AI and ICS |
+| `src-tauri/native/` | Swift school sign-in, Keychain, system file icons, PDFKit and Vision |
+| `scripts/` | Native build and synthetic acceptance checks |
 
-## 验证与当前限制
+The packaged app uses Tauri commands/events and private versioned JSON pipes, without a local HTTP service. UI conventions are documented in [DESIGN.md](DESIGN.md).
+
+## Checks and limitations
 
 ```sh
 npm run build
@@ -94,14 +106,12 @@ python3 scripts/test-native.py
 python3 scripts/test-keychain.py
 ```
 
-Keychain 测试使用临时隔离的测试钥匙串。自动测试使用合成资料和模拟 AI 服务。
+Tests use synthetic documents and mock AI providers. Keychain checks use an isolated temporary test keychain.
 
-本机验收已通过 25 项核心测试、PDF/OCR、Keychain、应用签名与 DMG 校验；真实 PolyU 登录及首次课程同步已完成。存在部分不可读来源，目前只显示失败计数，逐项失败报告仍需补充。详细结果见 [验收记录](docs/validation.md)。
+Real PolyU sign-in and an initial course sync were verified in the preceding prototype. Some sources were unreadable; per-source failure details still need work. See the [validation record](docs/validation.md).
 
-以下功能后置：真实 syllabus 的 AI 准确率验收、外部日历实际导入验收、Apple Calendar/Reminders 原生写入、手机双向同步、Office 直接解析、视频下载、成绩折算、Windows 与 Intel Mac。ICS 为文件导出，重复导入是否更新取决于目标日历应用。
+Real syllabus AI accuracy and external calendar import still require acceptance testing. Apple Calendar/Reminders native writing, cross-device sync, direct Office parsing, video downloading, grades, Windows and Intel Mac support are deferred. Repeated ICS import behavior depends on the receiving calendar app.
 
-## 来源与授权
+## Attribution and licensing
 
-原生登录和文档读取等实现复用、改编自 [PolyU Study Console](https://github.com/Andre-HUANG/polyu-study-console)，作者授权来源和改编范围见 [NOTICE.md](NOTICE.md)。借用部分不因合入而自动重新授权为 MIT；原创部分适用 [LICENSE](LICENSE)。第三方依赖适用各自许可证，清单随发行包提供。
-
-[原型方案](docs/prototype-plan.md) · [项目调研](docs/github-research.md)
+Native sign-in and document reading were adapted from [PolyU Study Console](https://github.com/Andre-HUANG/polyu-study-console) with the author's permission, as confirmed by this project's owner. See [NOTICE.md](NOTICE.md) for sources and scope. Borrowed implementation is not automatically relicensed as MIT; original work follows [LICENSE](LICENSE). Third-party dependencies retain their own licenses and notices.

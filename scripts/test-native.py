@@ -12,3 +12,10 @@ for name in ('text.pdf','scan.pdf'):
  assert '2026' in content and '23:59' in content, name
  results.append({'fixture':name,'page':page['page'],'method':page['method'],'passed':True})
 print(json.dumps({'native_reader':results},ensure_ascii=False))
+
+bridge=root/'src-tauri/resources/NativeBridge.app/Contents/MacOS/NativeBridge'
+r=subprocess.run([str(bridge)],input=json.dumps({'version':1,'operation':'file-icon','path':str(fixtures/'text.pdf')}),text=True,capture_output=True,check=True)
+icon=json.loads(r.stdout);assert icon['version']==1 and icon['dataUrl'].startswith('data:image/png;base64,')
+import base64
+assert base64.b64decode(icon['dataUrl'].split(',',1)[1]).startswith(b'\x89PNG\r\n\x1a\n')
+print('Native system file icon: passed')

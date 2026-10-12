@@ -12,6 +12,27 @@ use std::{
 };
 use uuid::Uuid;
 pub type Result<T> = std::result::Result<T, String>;
+fn translate_builtin_metadata(value: &mut Value) {
+    for key in ["method", "filename", "reason"] {
+        let text = s(value, key);
+        let translated = match text.as_str() {
+            "本地规则" => "Local rules",
+            "Canvas 作业" => "Canvas assignment",
+            "本地规则识别，请核对原文" => "Detected by local rules. Check the source.",
+            "Canvas 发布的截止时间，请确认" => "Canvas deadline. Please review.",
+            "日期未明确或只有周次，请补充具体日期" => {
+                "No explicit date or only a week number. Please confirm a date."
+            }
+            "与已有来源的日期不同，请核对；两个来源均保留" => {
+                "This date conflicts with an existing source. Review both sources."
+            }
+            _ => &text,
+        };
+        if translated != text {
+            value[key] = json!(translated);
+        }
+    }
+}
 pub struct Core {
     pub db: Mutex<Connection>,
     pub data: PathBuf,
@@ -32,16 +53,61 @@ impl Core {
             db: Mutex::new(db),
             data,
             job: Mutex::new(
-                json!({"running":false,"stage":"尚未同步","downloaded":0,"failed":0,"skipped":0}),
+                json!({"running":false,"stage":"Not synced yet","downloaded":0,"failed":0,"skipped":0}),
             ),
             generation: AtomicU64::new(0),
             pids: Mutex::new(vec![]),
         };
         if c.get("settings", "main")?.is_none() {
             c.put("settings",&json!({"id":"main","provider":"compatible","endpoint":"https://api.openai.com/v1","model":"","hasKey":false,"active":"local"}))?;
-            c.put("workspace",&json!({"id":"local","name":"本地工作区","root":default,"user":null,"connected":false,"configured":false}))?;
+            c.put("workspace",&json!({"id":"local","name":"Local workspace","root":default,"user":null,"connected":false,"configured":false}))?;
         }
+        c.migrate_english()?;
         Ok(c)
+    }
+    fn migrate_english(&self) -> Result<()> {
+        for kind in ["workspace", "file", "finding", "task"] {
+            for mut value in self.list(kind)? {
+                if kind == "workspace" {
+                    let name = s(&value, "name");
+                    if name == "本地工作区" {
+                        value["name"] = json!("Local workspace");
+                    } else if let Some(owner) = name.strip_suffix(" 的工作区") {
+                        value["name"] = json!(format!("{owner}'s workspace"));
+                    }
+                }
+                if kind == "file" {
+                    value["category"] =
+                        json!(crate::materials::normalize_category(&s(&value, "category")));
+                }
+                if kind == "file" && value["demo"] == true {
+                    if let Ok(demo_path) = self.file_path(&value) {
+                        if let Ok(original) = fs::read_to_string(&demo_path) {
+                            let english = original
+                                .replace("# 合成演示课程", "# Synthetic demo course")
+                                .replace(
+                                    "此文件不是你的真实课程。",
+                                    "This is not a real course document.",
+                                );
+                            if english != original {
+                                fs::write(&demo_path, &english).map_err(err)?;
+                                value["hash"] = json!(hash(english.as_bytes()));
+                                value["size"] = json!(english.len());
+                            }
+                        }
+                    }
+                }
+                if value["demo"] == true && s(&value, "course") == "演示 · 人机交互" {
+                    value["course"] = json!("Demo · Human–Computer Interaction");
+                }
+                translate_builtin_metadata(&mut value);
+                if value["source"].is_object() {
+                    translate_builtin_metadata(&mut value["source"]);
+                }
+                self.put(kind, &value)?;
+            }
+        }
+        Ok(())
     }
     pub fn get(&self, kind: &str, id: &str) -> Result<Option<Value>> {
         let db = self.db.lock().unwrap();
@@ -70,7 +136,7 @@ impl Core {
     pub fn put(&self, kind: &str, value: &Value) -> Result<Value> {
         let id = s(value, "id");
         if id.is_empty() {
-            return Err("记录缺少 ID".into());
+            return Err("Record is missing an ID".into());
         }
         self.db.lock().unwrap().execute("INSERT INTO records VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data",params![kind,id,value.to_string()]).map_err(err)?;
         Ok(value.clone())
@@ -87,11 +153,12 @@ impl Core {
         Ok(())
     }
     pub fn settings(&self) -> Result<Value> {
-        self.get("settings", "main")?.ok_or("设置缺失".into())
+        self.get("settings", "main")?
+            .ok_or("Settings not found".into())
     }
     pub fn workspace(&self) -> Result<Value> {
         self.get("workspace", &s(&self.settings()?, "active"))?
-            .ok_or("工作区缺失".into())
+            .ok_or("Workspace not found".into())
     }
     pub fn active(&self) -> Result<String> {
         Ok(s(&self.workspace()?, "id"))
@@ -105,9 +172,9 @@ impl Core {
             .collect())
     }
     pub fn file(&self, id: &str) -> Result<Value> {
-        let v = self.get("file", id)?.ok_or("文件不存在")?;
+        let v = self.get("file", id)?.ok_or("File not found")?;
         if s(&v, "workspace") != self.active()? || v["available"] != true {
-            return Err("文件不在当前工作区".into());
+            return Err("File is not in the current workspace".into());
         }
         Ok(v)
     }
@@ -118,7 +185,7 @@ impl Core {
             PathBuf::from(s(
                 &self
                     .get("workspace", &s(file, "workspace"))?
-                    .ok_or("文件工作区不存在")?,
+                    .ok_or("File workspace not found")?,
                 "root",
             ))
         };
@@ -145,7 +212,7 @@ impl Core {
                 Err(_) => continue,
             };
             if meta.len() > 100 * 1024 * 1024 {
-                failures.push("有文件超过 100 MB，未索引".into());
+                failures.push("A file exceeds 100 MB and was not indexed".into());
                 continue;
             }
             let relative = path
@@ -156,7 +223,7 @@ impl Core {
             let bytes = match fs::read(&path) {
                 Ok(b) => b,
                 Err(_) => {
-                    failures.push("有文件无法读取".into());
+                    failures.push("A file could not be read".into());
                     continue;
                 }
             };
@@ -178,12 +245,19 @@ impl Core {
             file["workspace"] = workspace["id"].clone();
             file["relative"] = json!(relative);
             file["name"] = json!(path.file_name().unwrap_or_default().to_string_lossy());
-            file["course"] = json!(relative.split('/').next().unwrap_or("本地资料"));
+            file["course"] = json!(relative.split('/').next().unwrap_or("Local materials"));
             file["ext"] = json!(path
                 .extension()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_lowercase());
+            file["materialType"] =
+                json!(crate::materials::infer_type(&s(&file, "name"), &relative));
+            file["module"] = json!(if relative.split('/').count() > 2 {
+                relative.split('/').nth(1).unwrap_or("General")
+            } else {
+                "General"
+            });
             file["size"] = json!(meta.len());
             file["hash"] = json!(hash);
             file["available"] = json!(true);
@@ -218,26 +292,26 @@ impl Core {
             }
         }
         if s(&task, "title").trim().is_empty() || s(&task, "title").len() > 800 {
-            return Err("请填写有效任务标题".into());
+            return Err("Enter a valid task title".into());
         }
         let date = s(&task, "date");
         let time = s(&task, "time");
         if !date.is_empty() && !valid_date(&date) {
-            return Err("日期无效".into());
+            return Err("Invalid date".into());
         }
         if !time.is_empty() && (date.is_empty() || !valid_time(&time)) {
-            return Err("时间无效或缺少日期".into());
+            return Err("Invalid time or missing date".into());
         }
         if !["assignment", "exam", "study", "lecture", "other"].contains(&s(&task, "kind").as_str())
         {
-            return Err("任务类型无效".into());
+            return Err("Invalid task type".into());
         }
         task["updatedAt"] = json!(Utc::now().to_rfc3339());
         self.put("task", &task)
     }
     pub fn check(&self, g: u64) -> Result<()> {
         if self.generation.load(Ordering::SeqCst) != g {
-            Err("已取消".into())
+            Err("Cancelled".into())
         } else {
             Ok(())
         }
@@ -246,7 +320,7 @@ impl Core {
         self.generation.fetch_add(1, Ordering::SeqCst);
         let mut job = self.job.lock().unwrap();
         job["running"] = json!(false);
-        job["stage"] = json!("已取消，已下载的资料保留");
+        job["stage"] = json!("Cancelled. Downloaded materials are kept.");
     }
 }
 pub fn err(e: impl std::fmt::Display) -> String {
@@ -290,7 +364,7 @@ pub fn contained(root: &Path, target: &Path) -> Result<PathBuf> {
     let root = root.canonicalize().map_err(err)?;
     let target = target.canonicalize().map_err(err)?;
     if !target.starts_with(&root) || target == root || !target.is_file() {
-        return Err("文件路径越出资料库".into());
+        return Err("File path is outside the library".into());
     }
     Ok(target)
 }
@@ -301,13 +375,13 @@ fn walk(root: &Path, depth: usize, files: &mut Vec<PathBuf>, errors: &mut Vec<St
     let entries = match fs::read_dir(root) {
         Ok(v) => v,
         Err(_) => {
-            errors.push("有目录不可读".into());
+            errors.push("A folder could not be read".into());
             return;
         }
     };
     for e in entries.flatten() {
         if files.len() >= 6000 {
-            errors.push("本次扫描上限 6000 个文件".into());
+            errors.push("Scan limit: 6,000 files".into());
             return;
         }
         let name = e.file_name().to_string_lossy().to_string();
@@ -352,9 +426,9 @@ pub fn calendar(tasks: &[Value]) -> Result<String> {
     let mut lines = vec![
         "BEGIN:VCALENDAR".into(),
         "VERSION:2.0".into(),
-        "PRODID:-//PolyU Canvas Localized//Study Workspace//EN".into(),
+        "PRODID:-//PolyU Better Canvas//Study Workspace//EN".into(),
         "CALSCALE:GREGORIAN".into(),
-        "X-WR-CALNAME:PolyU 学习安排".into(),
+        "X-WR-CALNAME:PolyU study schedule".into(),
         "X-WR-TIMEZONE:Asia/Hong_Kong".into(),
     ];
     for task in tasks {
@@ -363,7 +437,7 @@ pub fn calendar(tasks: &[Value]) -> Result<String> {
             continue;
         }
         if !valid_date(&date) {
-            return Err("导出遇到无效日期".into());
+            return Err("Cannot export an invalid date".into());
         }
         lines.push("BEGIN:VEVENT".into());
         lines.push(format!(
@@ -377,7 +451,7 @@ pub fn calendar(tasks: &[Value]) -> Result<String> {
             lines.push(format!("DTSTART;VALUE=DATE:{}", d.format("%Y%m%d")));
             lines.push(format!(
                 "DTEND;VALUE=DATE:{}",
-                d.succ_opt().ok_or("日期溢出")?.format("%Y%m%d")
+                d.succ_opt().ok_or("Date overflow")?.format("%Y%m%d")
             ));
         } else {
             let t = NaiveTime::parse_from_str(&time, "%H:%M").map_err(err)?;
@@ -402,7 +476,7 @@ pub fn calendar(tasks: &[Value]) -> Result<String> {
             s(task, "notes"),
             if source.is_object() {
                 format!(
-                    "来源：{} 第 {} 页\n{}",
+                    "Source: {} page {}\n{}",
                     s(source, "filename"),
                     source["page"],
                     s(source, "excerpt")
@@ -435,13 +509,13 @@ mod tests {
     #[test]
     fn ics_timezone() {
         let v = calendar(&[
-            json!({"id":"abc","title":"考试,测试","date":"2026-10-12","time":"09:00"}),
-            json!({"id":"all","title":"作业","date":"2026-10-12"}),
+            json!({"id":"abc","title":"Exams,测试","date":"2026-10-12","time":"09:00"}),
+            json!({"id":"all","title":"Assignments","date":"2026-10-12"}),
         ])
         .unwrap();
         assert!(v.contains("DTSTART:20261012T010000Z"));
         assert!(v.contains("DTEND;VALUE=DATE:20261013"));
-        assert!(v.contains("考试\\,测试"));
+        assert!(v.contains("Exams\\,测试"));
     }
     #[test]
     fn fold_unicode() {
@@ -504,14 +578,14 @@ mod store_tests {
         fs::write(library.join("one.md"), "synthetic syllabus").unwrap();
         c.scan().unwrap();
         let mut f = c.scoped("file").unwrap()[0].clone();
-        f["category"] = json!("课程大纲");
+        f["category"] = json!("Overview");
         c.put("file", &f).unwrap();
         fs::rename(library.join("one.md"), library.join("two.md")).unwrap();
         c.scan().unwrap();
         let files = c.scoped("file").unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0]["id"], f["id"]);
-        assert_eq!(files[0]["category"], "课程大纲");
+        assert_eq!(files[0]["category"], "Overview");
         drop(c);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -544,7 +618,10 @@ mod store_tests {
 /// Keep TLS verification enabled; never copy Canvas headers to other hosts.
 pub fn http_client(timeout: std::time::Duration) -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
-        .user_agent("PolyUCanvasLocalized/0.1.0 (read-only)")
+        .user_agent(format!(
+            "PolyUBetterCanvas/{} (read-only)",
+            env!("CARGO_PKG_VERSION")
+        ))
         .redirect(reqwest::redirect::Policy::none())
         .timeout(timeout);
     if let Ok(output) = std::process::Command::new("/usr/sbin/scutil")
@@ -579,12 +656,14 @@ pub fn ensure_dir(root: &Path, target: &Path) -> Result<()> {
     let mut current = root.to_path_buf();
     for component in target.strip_prefix(root).map_err(err)?.components() {
         if !matches!(component, std::path::Component::Normal(_)) {
-            return Err("资料目录路径无效".into());
+            return Err("Invalid library path".into());
         }
         current.push(component);
         match fs::symlink_metadata(&current) {
             Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
-                return Err("资料目录含链接或非目录，已停止写入".into())
+                return Err(
+                    "Library path contains a symlink or is not a folder. Write stopped.".into(),
+                )
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -598,7 +677,7 @@ pub fn ensure_dir(root: &Path, target: &Path) -> Result<()> {
 pub fn validate_write(root: &Path, target: &Path) -> Result<()> {
     let parent = target
         .parent()
-        .ok_or("下载路径无效")?
+        .ok_or("Invalid download path")?
         .canonicalize()
         .map_err(err)?;
     if !parent.starts_with(root.canonicalize().map_err(err)?)
@@ -606,7 +685,7 @@ pub fn validate_write(root: &Path, target: &Path) -> Result<()> {
             .map(|m| m.file_type().is_symlink())
             .unwrap_or(false)
     {
-        return Err("下载路径含链接或越出资料库".into());
+        return Err("Download path contains a symlink or is outside the library".into());
     }
     Ok(())
 }

@@ -2,6 +2,7 @@
 mod ai;
 mod canvas;
 mod core;
+mod materials;
 mod native;
 use core::*;
 use serde_json::{json, Value};
@@ -30,6 +31,17 @@ async fn dispatch(
                 json!({"settings":settings,"workspace":workspace,"workspaces":core.list("workspace")?,"files":core.scoped("file")?.into_iter().filter(|f|f["available"]==true).collect::<Vec<_>>(),"tasks":core.scoped("task")?,"findings":core.scoped("finding")?,"courses":core.scoped("course")?,"job":jobs,"version":env!("CARGO_PKG_VERSION")}),
             )
         }
+        "file_icon" => {
+            let file = core.file(&s(&input, "id"))?;
+            let path = core.file_path(&file)?;
+            native::helper(
+                &app,
+                &core,
+                "NativeBridge",
+                json!({"version":1,"operation":"file-icon","path":path}),
+            )
+            .await
+        }
         "default_folder" => {
             let mut ws = core.workspace()?;
             fs::create_dir_all(s(&ws, "root")).map_err(err)?;
@@ -39,14 +51,14 @@ async fn dispatch(
         }
         "choose_folder" => {
             if core.job.lock().unwrap()["running"] == true {
-                return Err("同步期间不能切换目录".into());
+                return Err("Cannot change the folder during syncing".into());
             }
             let picker_app = app.clone();
             let selected = tauri::async_runtime::spawn_blocking(move || {
                 picker_app
                     .dialog()
                     .file()
-                    .set_title("选择课程资料文件夹")
+                    .set_title("Choose a course library folder")
                     .blocking_pick_folder()
             })
             .await
@@ -56,10 +68,10 @@ async fn dispatch(
             };
             let selected = selected
                 .into_path()
-                .map_err(|_| "目录路径无效".to_string())?;
+                .map_err(|_| "Invalid folder path".to_string())?;
             let root = selected.canonicalize().map_err(err)?;
             if root == PathBuf::from("/") || Some(root.clone()) == app.path().home_dir().ok() {
-                return Err("请选择资料子文件夹".into());
+                return Err("Choose a dedicated library folder".into());
             }
             canvas::stop(&core);
             let mut ws = core.workspace()?;
@@ -98,7 +110,7 @@ async fn dispatch(
             let user = &login["user"];
             let uid = s(user, "id");
             if uid.is_empty() || !uid.chars().all(|c| c.is_ascii_digit()) {
-                return Err("未确认 Canvas 用户身份".into());
+                return Err("Canvas identity could not be verified".into());
             }
             canvas::verify(&core, generation, &login).await?;
             core.check(generation)?;
@@ -119,7 +131,7 @@ async fn dispatch(
                     .path()
                     .document_dir()
                     .map_err(err)?
-                    .join("PolyU Canvas Localized")
+                    .join("PolyU Better Canvas")
                     .join(&wsid);
                 fs::create_dir_all(&root).map_err(err)?;
                 json!({"id":wsid,"name":s(user,"name"),"root":root,"configured":true,"user":user})
@@ -134,11 +146,11 @@ async fn dispatch(
             .await?;
             if core.check(generation).is_err() {
                 let _ = native::key(&app, &core, "delete", &format!("canvas-{uid}"), "").await;
-                return Err("登录操作已取消".into());
+                return Err("Sign-in was cancelled".into());
             }
             ws["user"] = user.clone();
             ws["connected"] = json!(true);
-            ws["name"] = json!(format!("{} 的工作区", s(user, "name")));
+            ws["name"] = json!(format!("{}'s workspace", s(user, "name")));
             core.put("workspace", &ws)?;
             let mut settings = core.settings()?;
             settings["active"] = ws["id"].clone();
@@ -164,7 +176,7 @@ async fn dispatch(
             canvas::stop(&core);
             let id = s(&input, "id");
             if core.get("workspace", &id)?.is_none() {
-                return Err("工作区不存在".into());
+                return Err("Workspace not found".into());
             }
             let mut settings = core.settings()?;
             settings["active"] = json!(id);
@@ -186,16 +198,16 @@ async fn dispatch(
                 }
             }
             if !["compatible", "anthropic", "ollama"].contains(&s(&settings, "provider").as_str()) {
-                return Err("服务商无效".into());
+                return Err("Invalid provider".into());
             }
             let endpoint = reqwest::Url::parse(&s(&settings, "endpoint"))
-                .map_err(|_| "AI 地址无效".to_string())?;
+                .map_err(|_| "Invalid AI endpoint".to_string())?;
             if endpoint.scheme() != "https"
                 && !(endpoint.scheme() == "http"
                     && [Some("127.0.0.1"), Some("localhost"), Some("[::1]")]
                         .contains(&endpoint.host_str()))
             {
-                return Err("云端 AI 地址需要 HTTPS".into());
+                return Err("Remote AI endpoints require HTTPS".into());
             }
             let key = s(&input, "apiKey");
             if input["clearKey"] == true {
@@ -223,7 +235,12 @@ async fn dispatch(
         }
         "category" => {
             let mut file = core.file(&s(&input, "id"))?;
-            file["category"] = json!(s(&input, "category").chars().take(80).collect::<String>());
+            let category = s(&input, "category");
+            let category = materials::normalize_category(&category);
+            if !category.is_empty() && !materials::TYPES.contains(&category) {
+                return Err("Unsupported material type".into());
+            }
+            file["category"] = json!(category);
             file["suggestedName"] = json!(s(&input, "suggestedName")
                 .chars()
                 .take(200)
@@ -236,26 +253,30 @@ async fn dispatch(
             let old = if id.is_empty() {
                 None
             } else {
-                let t = core.get("task", &id)?.ok_or("任务不存在")?;
+                let t = core.get("task", &id)?.ok_or("Task not found")?;
                 if s(&t, "workspace") != core.active()? {
-                    return Err("任务不在当前工作区".into());
+                    return Err("Task is not in the current workspace".into());
                 }
                 Some(t)
             };
             core.task(&input, old)
         }
         "task_delete" => {
-            let task = core.get("task", &s(&input, "id"))?.ok_or("任务不存在")?;
+            let task = core
+                .get("task", &s(&input, "id"))?
+                .ok_or("Task not found")?;
             if s(&task, "workspace") != core.active()? {
-                return Err("任务不在当前工作区".into());
+                return Err("Task is not in the current workspace".into());
             }
             core.remove("task", &s(&task, "id"))?;
             Ok(json!({"ok":true}))
         }
         "finding_accept" | "finding_dismiss" => {
-            let mut finding = core.get("finding", &s(&input, "id"))?.ok_or("发现不存在")?;
+            let mut finding = core
+                .get("finding", &s(&input, "id"))?
+                .ok_or("Suggestion not found")?;
             if s(&finding, "workspace") != core.active()? {
-                return Err("发现不在当前工作区".into());
+                return Err("Suggestion is not in the current workspace".into());
             }
             if finding["status"] != "pending" {
                 return Ok(json!({"ok":true}));
@@ -280,8 +301,8 @@ async fn dispatch(
                 picker_app
                     .dialog()
                     .file()
-                    .set_title("导出学习日历")
-                    .set_file_name("polyu-calendar.ics")
+                    .set_title("Export study calendar")
+                    .set_file_name("polyu-better-canvas.ics")
                     .add_filter("iCalendar", &["ics"])
                     .blocking_save_file()
             })
@@ -292,7 +313,7 @@ async fn dispatch(
             };
             let selected = selected
                 .into_path()
-                .map_err(|_| "导出路径无效".to_string())?;
+                .map_err(|_| "Invalid export path".to_string())?;
             fs::write(selected, content).map_err(err)?;
             Ok(json!({"ok":true}))
         }
@@ -313,13 +334,13 @@ async fn dispatch(
             let exam = (today + chrono::Duration::days(9))
                 .format("%Y-%m-%d")
                 .to_string();
-            let text=format!("# 合成演示课程 · Human–Computer Interaction\n此文件不是你的真实课程。\nAssignment 1 — Interface critique — Due {due} 23:59\nMidterm exam — {exam} 14:00\nFinal project — Week 7 (date to be announced)\n");
+            let text=format!("# Synthetic demo course · Human–Computer Interaction\nThis is not a real course document.\nAssignment 1 — Interface critique — Due {due} 23:59\nMidterm exam — {exam} 14:00\nFinal project — Week 7 (date to be announced)\n");
             fs::write(root.join("Demo syllabus.md"), &text).map_err(err)?;
             let id = format!("demo-{}", core.active()?);
-            core.put("file",&json!({"id":id,"workspace":core.active()?,"relative":"Demo syllabus.md","name":"Demo syllabus.md","course":"演示 · 人机交互","ext":"md","size":text.len(),"hash":hash(text.as_bytes()),"available":true,"demo":true,"category":"课程大纲"}))?;
+            core.put("file",&json!({"id":id,"workspace":core.active()?,"relative":"Demo syllabus.md","name":"Demo syllabus.md","course":"Demo · Human–Computer Interaction","ext":"md","size":text.len(),"hash":hash(text.as_bytes()),"available":true,"demo":true,"category":"Overview"}))?;
             let id = format!("demo-task-{}", core.active()?);
             if core.get("task", &id)?.is_none() {
-                core.task(&json!({"title":"完成界面评析初稿","date":due,"kind":"assignment","course":"演示 · 人机交互"}),Some(json!({"id":id,"workspace":core.active()?,"demo":true,"completed":false})))?;
+                core.task(&json!({"title":"Draft the interface critique","date":due,"kind":"assignment","course":"Demo · Human–Computer Interaction"}),Some(json!({"id":id,"workspace":core.active()?,"demo":true,"completed":false})))?;
             }
             Ok(json!({"ok":true}))
         }
@@ -333,19 +354,19 @@ async fn dispatch(
             }
             Ok(json!({"ok":true}))
         }
-        _ => Err("未知操作".into()),
+        _ => Err("Unknown operation".into()),
     }
 }
 fn start_sync(app: tauri::AppHandle, core: Arc<Core>, restore: bool) -> Result<()> {
     if core.workspace()?["connected"] != true {
-        return Err("请先连接 Canvas".into());
+        return Err("Connect Canvas first".into());
     }
     {
         let mut job = core.job.lock().unwrap();
         if job["running"] == true {
-            return Err("同步正在运行".into());
+            return Err("A sync is already running".into());
         }
-        *job = json!({"running":true,"stage":"正在开始同步","downloaded":0,"failed":0,"skipped":0,"error":""});
+        *job = json!({"running":true,"stage":"Starting sync","downloaded":0,"failed":0,"skipped":0,"error":""});
     }
     let generation = core.generation.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
@@ -355,7 +376,7 @@ fn start_sync(app: tauri::AppHandle, core: Arc<Core>, restore: bool) -> Result<(
             job["running"] = json!(false);
             job["lastFinished"] = json!(chrono::Utc::now().to_rfc3339());
             if let Err(e) = result {
-                job["stage"] = json!("同步未完成");
+                job["stage"] = json!("Sync did not finish");
                 job["error"] = json!(e)
             }
             let _ = app.emit("workspace-progress", job.clone());
@@ -377,7 +398,7 @@ fn main() {
             } else {
                 app.path()
                     .document_dir()?
-                    .join("PolyU Canvas Localized")
+                    .join("PolyU Better Canvas")
                     .join("Local")
             };
             let core = Arc::new(Core::new(data, default).map_err(std::io::Error::other)?);
@@ -418,5 +439,5 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("Unable to start PolyU Canvas Localized");
+        .expect("Unable to start PolyU Better Canvas");
 }

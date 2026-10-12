@@ -103,7 +103,7 @@ impl Transport {
         for _ in 0..10 {
             core.check(g)?;
             if !allowed(&url) {
-                return Err("下载目标域名不受支持，已停止".into());
+                return Err("Download host is not supported. Request stopped.".into());
             }
             let mut response = None;
             for attempt in 0..3 {
@@ -140,31 +140,31 @@ impl Transport {
                     }
                     Err(_) => {
                         if attempt == 2 {
-                            return Err("Canvas 请求失败或超时".into());
+                            return Err("Canvas request failed or timed out".into());
                         }
                         tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
                     }
                 }
             }
-            let r = response.ok_or("请求未完成")?;
+            let r = response.ok_or("Request did not finish")?;
             if r.status().is_redirection() {
                 let location = r
                     .headers()
                     .get("location")
                     .and_then(|v| v.to_str().ok())
-                    .ok_or("无效重定向")?;
+                    .ok_or("Invalid redirect")?;
                 url = url.join(location).map_err(err)?;
                 continue;
             }
             if r.status().as_u16() == 401 {
-                return Err("登录已失效，请重新连接 Canvas".into());
+                return Err("Session expired. Reconnect Canvas.".into());
             }
             if !r.status().is_success() {
                 return Err(format!("Canvas HTTP {}", r.status().as_u16()));
             }
             return Ok(r);
         }
-        Err("重定向次数过多".into())
+        Err("Too many redirects".into())
     }
     async fn pages(&self, url: &str, core: &Core, g: u64) -> Result<Vec<Value>> {
         let mut url = url.to_string();
@@ -172,7 +172,7 @@ impl Transport {
         let mut seen = HashSet::new();
         for _ in 0..100 {
             if !seen.insert(url.clone()) {
-                return Err("Canvas 分页循环".into());
+                return Err("Canvas pagination loop".into());
             }
             let r = self.get(&url, core, g).await?;
             let next = r
@@ -189,20 +189,20 @@ impl Transport {
             let data: Value = r
                 .json()
                 .await
-                .map_err(|_| "Canvas 返回内容不可读".to_string())?;
-            let items = data.as_array().ok_or("Canvas 返回内容不是列表")?;
+                .map_err(|_| "Canvas returned an unreadable response".to_string())?;
+            let items = data.as_array().ok_or("Canvas response is not a list")?;
             rows.extend(items.clone());
             match next {
                 Some(next) => {
                     if Url::parse(&next).map_err(err)?.host_str() != Some("canvas.polyu.edu.hk") {
-                        return Err("分页地址越出 Canvas".into());
+                        return Err("Pagination URL is outside Canvas".into());
                     }
                     url = next
                 }
                 None => return Ok(rows),
             }
         }
-        Err("课程分页超过限制".into())
+        Err("Course pagination limit exceeded".into())
     }
 }
 pub async fn verify(core: &Core, g: u64, login: &Value) -> Result<()> {
@@ -216,7 +216,7 @@ pub async fn verify(core: &Core, g: u64, login: &Value) -> Result<()> {
             if value_id(&user["id"]) == expected {
                 return Ok(());
             }
-            return Err("Canvas 用户身份与登录窗口不一致".into());
+            return Err("Canvas identity does not match the sign-in window".into());
         }
     }
     core.check(g)?;
@@ -224,7 +224,7 @@ pub async fn verify(core: &Core, g: u64, login: &Value) -> Result<()> {
     let html = response
         .text()
         .await
-        .map_err(|_| "无法验证 Canvas 身份".to_string())?;
+        .map_err(|_| "Cannot verify Canvas identity".to_string())?;
     let re = Regex::new(r#""current_user_id"\s*:\s*"?(\d+)"#).unwrap();
     if html.contains("global_nav_dashboard_link")
         && re
@@ -234,7 +234,7 @@ pub async fn verify(core: &Core, g: u64, login: &Value) -> Result<()> {
     {
         Ok(())
     } else {
-        Err("未确认学校 Canvas 登录，请重新登录".into())
+        Err("School Canvas sign-in was not verified. Sign in again.".into())
     }
 }
 pub fn progress(app: &tauri::AppHandle, core: &Core, stage: &str) {
@@ -248,15 +248,15 @@ pub async fn run(app: tauri::AppHandle, core: Arc<Core>, g: u64, restore: bool) 
     let account = format!("canvas-{}", s(&workspace["user"], "id"));
     let raw = native::key(&app, &core, "get", &account, "").await?;
     if raw.is_empty() {
-        return Err("请先连接 Canvas".into());
+        return Err("Connect Canvas first".into());
     }
-    let session: Value =
-        serde_json::from_str(&raw).map_err(|_| "会话不可读，请重新登录".to_string())?;
+    let session: Value = serde_json::from_str(&raw)
+        .map_err(|_| "Cannot read the session. Sign in again.".to_string())?;
     let t = Transport {
         client: http_client(Duration::from_secs(25))?,
         cookies: session["cookies"].clone(),
     };
-    progress(&app, &core, "读取课程列表");
+    progress(&app, &core, "Reading courses");
     let roster = t
         .pages(
             &format!("{BASE}/api/v1/courses?per_page=100&enrollment_state=active"),
@@ -279,7 +279,7 @@ pub async fn run(app: tauri::AppHandle, core: Arc<Core>, g: u64, restore: bool) 
         }
     }
     if courses.is_empty() {
-        return Err("没有读取到课程；请检查 Canvas 登录和课程可见性".into());
+        return Err("No courses found. Check your Canvas session and course visibility.".into());
     }
     let root = PathBuf::from(s(&workspace, "root"));
     fs::create_dir_all(&root).map_err(err)?;
@@ -304,7 +304,7 @@ pub async fn run(app: tauri::AppHandle, core: Arc<Core>, g: u64, restore: bool) 
         progress(
             &app,
             &core,
-            &format!("同步课程 {}/{} · {}", index + 1, courses.len(), name),
+            &format!("Syncing course {}/{} · {}", index + 1, courses.len(), name),
         );
         let mut found: HashMap<String, (String, String)> = HashMap::new();
         let mut visible_downloads: HashMap<String, String> = HashMap::new();
@@ -389,7 +389,7 @@ pub async fn run(app: tauri::AppHandle, core: Arc<Core>, g: u64, restore: bool) 
                                 );
                                 if core.get("finding", &fid)?.is_none() {
                                     core.check(g)?;
-                                    core.put("finding",&json!({"id":fid,"workspace":wid,"title":s(&item,"name"),"date":hk.format("%Y-%m-%d").to_string(),"time":hk.format("%H:%M").to_string(),"kind":"assignment","course":name,"status":"pending","filename":"Canvas 作业","page":1,"excerpt":format!("Canvas due_at: {}",s(&item,"due_at")),"url":s(&item,"html_url"),"method":"Canvas","reason":"Canvas 发布的截止时间，请确认","demo":false}))?;
+                                    core.put("finding",&json!({"id":fid,"workspace":wid,"title":s(&item,"name"),"date":hk.format("%Y-%m-%d").to_string(),"time":hk.format("%H:%M").to_string(),"kind":"assignment","course":name,"status":"pending","filename":"Canvas Assignments","page":1,"excerpt":format!("Canvas due_at: {}",s(&item,"due_at")),"url":s(&item,"html_url"),"method":"Canvas","reason":"Canvas deadline. Please review.","demo":false}))?;
                                 }
                             }
                         }
@@ -460,7 +460,7 @@ pub async fn run(app: tauri::AppHandle, core: Arc<Core>, g: u64, restore: bool) 
                                 "{}.md",
                                 safe_name(route.split('/').next_back().unwrap_or("page"))
                             );
-                            let contents = format!("来源：{BASE}{route}\n\n{text}");
+                            let contents = format!("Source: {BASE}{route}\n\n{text}");
                             save_download(
                                 &core,
                                 &root,
@@ -591,9 +591,9 @@ pub async fn run(app: tauri::AppHandle, core: Arc<Core>, g: u64, restore: bool) 
         &app,
         &core,
         if total_fail > 0 {
-            "同步结束，部分来源或文件不可读"
+            "Sync finished with unreadable sources or files"
         } else {
-            "同步完成"
+            "Sync complete"
         },
     );
     Ok(())
