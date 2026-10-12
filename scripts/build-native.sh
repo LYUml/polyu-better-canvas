@@ -14,7 +14,7 @@ python3 - <<'PY'
 import plistlib
 from pathlib import Path
 p=Path('src-tauri/resources/NativeBridge.app/Contents/Info.plist')
-info={'CFBundleIdentifier':'local.polyu.canvas.localized.bridge','CFBundleName':'PolyU Canvas · Native','CFBundleDisplayName':'PolyU Canvas · Native','CFBundleExecutable':'NativeBridge','CFBundlePackageType':'APPL','CFBundleShortVersionString':'0.1.0','CFBundleVersion':'1','LSMinimumSystemVersion':'13.0','LSUIElement':True,'NSHighResolutionCapable':True,'NSDesktopFolderUsageDescription':'读取你选择的课程资料文件夹。','NSDocumentsFolderUsageDescription':'管理你选择的课程资料和导出的日历文件。'}
+info={'CFBundleIdentifier':'local.polyu.canvas.localized.bridge','CFBundleName':'PolyU Canvas · Native','CFBundleDisplayName':'PolyU Canvas · Native','CFBundleExecutable':'NativeBridge','CFBundlePackageType':'APPL','CFBundleShortVersionString':'0.1.1','CFBundleVersion':'1','LSMinimumSystemVersion':'13.0','LSUIElement':True,'NSHighResolutionCapable':True,'NSDesktopFolderUsageDescription':'读取你选择的课程资料文件夹。','NSDocumentsFolderUsageDescription':'管理你选择的课程资料和导出的日历文件。'}
 p.write_bytes(plistlib.dumps(info))
 PY
 for attribute in com.apple.FinderInfo com.apple.ResourceFork; do

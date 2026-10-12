@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -137,8 +138,103 @@ const empty: State = {
     failed: 0,
     skipped: 0,
   },
-  version: "0.1.0",
+  version: "0.1.1",
 };
+const previewMode =
+  !native &&
+  import.meta.env.DEV &&
+  new URLSearchParams(location.search).has("preview");
+const previewDate = (offset: number) => {
+  const d = new Date(today() + "T12:00:00+08:00");
+  d.setDate(d.getDate() + offset);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const previewState: State = previewMode
+  ? {
+      ...empty,
+      workspace: {
+        ...empty.workspace,
+        configured: true,
+        name: "合成演示工作区",
+        user: { id: "preview-user", name: "演示用户" },
+        connected: true,
+      },
+      files: [
+        "BSE3125 · Optics and Lighting",
+        "AMA2111 · Mathematics I",
+        "BSE3322 · Fire Safety Systems",
+      ].flatMap((course, c) =>
+        [
+          "Course syllabus.pdf",
+          "Lecture 01 — Introduction.pdf",
+          "Teaching schedule.pdf",
+          "Assignment 1.pdf",
+          "Reading notes.md",
+        ].map((name, i) => ({
+          id: `preview-${c}-${i}`,
+          name,
+          course,
+          category: ["课程大纲", "讲义", "课程大纲", "作业", "参考资料"][i],
+          ext: i === 4 ? "md" : "pdf",
+          size: (i + 1) * 184320,
+          relative: `${course}/${name}`,
+          demo: true,
+        })),
+      ),
+      tasks: [
+        {
+          id: "p-task-1",
+          title: "Assignment 1 · Lighting analysis",
+          course: "BSE3125 · Optics and Lighting",
+          date: previewDate(2),
+          time: "23:59",
+          kind: "assignment",
+          demo: true,
+        },
+        {
+          id: "p-task-2",
+          title: "Midterm examination",
+          course: "AMA2111 · Mathematics I",
+          date: previewDate(8),
+          time: "14:00",
+          kind: "exam",
+          demo: true,
+        },
+        {
+          id: "p-task-3",
+          title: "整理本周课堂笔记",
+          kind: "study",
+          demo: true,
+        },
+        {
+          id: "p-task-4",
+          title: "复习光学基础",
+          kind: "study",
+          date: today(),
+          time: "16:00",
+          demo: true,
+        },
+      ],
+      findings: [
+        {
+          id: "p-finding",
+          title: "Final report submission",
+          kind: "assignment",
+          status: "pending",
+          filename: "Course syllabus.pdf",
+          fileId: "preview-0-0",
+          page: 3,
+          excerpt:
+            "Final report submission: 30 October 2026, 23:59 (Hong Kong time).",
+          date: "2026-10-30",
+          time: "23:59",
+          course: "BSE3125 · Optics and Lighting",
+          method: "合成演示 · PDF 文字",
+          demo: true,
+        },
+      ],
+    }
+  : empty;
 const size = (n = 0) =>
   n < 1024 * 1024
     ? `${Math.max(1, Math.round(n / 1024))} KB`
@@ -296,7 +392,9 @@ function TaskForm({
             <details className="detail-source">
               <summary>查看来源</summary>
               <div className="quote">
-                {task.source.filename} · 第 {task.source.page} 页<br />
+                {task.source.filename || "Canvas 作业"}
+                {task.source.page ? ` · 第 ${task.source.page} 页` : ""}
+                <br />
                 {task.source.excerpt}
               </div>
             </details>
@@ -323,7 +421,7 @@ function TaskForm({
   );
 }
 function App() {
-  const [state, setState] = useState<State>(empty);
+  const [state, setState] = useState<State>(previewMode ? previewState : empty);
   const [page, setPage] = useState<Page>("home");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -335,6 +433,7 @@ function App() {
   const [filePage, setFilePage] = useState(0);
   const [month, setMonth] = useState(() => new Date(today() + "T12:00:00"));
   const [edit, setEdit] = useState<Item | null>(null);
+  const [inspectorTab, setInspectorTab] = useState("preview");
   const [selected, setSelected] = useState<Item | null>(null);
   const [documentText, setDocumentText] = useState<Doc | null>(null);
   const [docError, setDocError] = useState("");
@@ -353,6 +452,16 @@ function App() {
     action: string,
     input: Record<string, unknown> = {},
   ): Promise<T> => {
+    if (previewMode && action === "read_file")
+      return {
+        pages: [
+          {
+            page: 1,
+            method: "合成预览 · PDF 文字",
+            text: "Course syllabus\n\nOptics and Lighting\n\nCourse overview\nThis course introduces lighting principles and visual comfort.\n\nAssessment\nAssignment 1: lighting analysis.\nFinal report submission: 30 October 2026, 23:59 (Hong Kong time).\n\n此内容为界面验收用合成资料。",
+          },
+        ],
+      } as T;
     if (!native)
       throw new Error("浏览器仅用于界面预览，请在打包的 Mac App 中操作");
     return invoke<T>("dispatch", { action, input });
@@ -391,12 +500,14 @@ function App() {
       .catch((e) => setError(String(e)))
       .finally(() => setReady(true));
     if (!native) return;
+    const updated = listen("workspace-updated", () => void refresh());
     const unsub = listen<Job>("workspace-progress", (e) => {
       setState((s) => ({ ...s, job: e.payload }));
       if (!e.payload.running) void refresh();
     });
     return () => {
       void unsub.then((f) => f());
+      void updated.then((f) => f());
     };
   }, []);
   useEffect(() => {
@@ -409,6 +520,7 @@ function App() {
     setFilePage(0);
   }, [page]);
   useEffect(() => {
+    setInspectorTab("preview");
     setDocumentText(null);
     setDocError("");
     setCategorySuggestion(null);
@@ -459,6 +571,7 @@ function App() {
     .sort(sortTasks);
   const title = routes.find((r) => r.id === page)!.name;
   const changePage = (p: Page) => {
+    if (p !== "files") setSelected(null);
     setPage(p);
     setError("");
   };
@@ -492,6 +605,138 @@ function App() {
       setConsent(null);
     }
   };
+  const fileDetail = selected ? (
+    <div className="modal-body file-detail">
+      <div className="file-preview">
+        {docError ? (
+          <div className="result-error">
+            {docError}
+            <br />
+            可以用系统默认应用打开原文件。
+          </div>
+        ) : documentText ? (
+          documentText.pages.map((p) => (
+            <div className="page-text" key={p.page}>
+              <strong>
+                第 {p.page} 页 · {p.method || "文字"}
+              </strong>
+              <pre>{p.text || "本页没有可读文字"}</pre>
+            </div>
+          ))
+        ) : (
+          <div className="loading">
+            <RefreshCw aria-hidden="true" />
+            正在本地读取文字与 OCR…
+          </div>
+        )}
+      </div>
+      <div className="file-info">
+        <Badge demo={selected.demo} kind={selected.category || "未分类"} />
+        <small>
+          {selected.course}
+          <br />
+          {selected.relative}
+          <br />
+          {size(selected.size)}
+        </small>
+        <button
+          className="btn"
+          onClick={() => run("open_file", { id: selected.id })}
+        >
+          <ArrowUpRight aria-hidden="true" />
+          打开原文件
+        </button>
+        <button
+          className="btn"
+          onClick={() => run("reveal_file", { id: selected.id })}
+        >
+          <FolderOpen aria-hidden="true" />在 Finder 中显示
+        </button>
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+        <h3>发现学习安排</h3>
+        <button
+          className="btn soft"
+          disabled={!!busy || !documentText}
+          onClick={() => void analyze("local")}
+        >
+          <Search aria-hidden="true" />
+          {busy === "analyze" ? "正在分析…" : "本地规则提取日期"}
+        </button>
+        <button
+          className="btn primary"
+          disabled={!!busy || !documentText}
+          onClick={() => setConsent("deadlines")}
+        >
+          <Sparkles aria-hidden="true" />
+          用我的 AI 分析
+        </button>
+        <p className="ai-disclosure">
+          结果先进入待确认。AI 只在你主动确认后接收正文，不会收到 Canvas 会话。
+        </p>
+        <h3>整理资料</h3>
+        <label className="field">
+          分类标签
+          <select
+            value={selected.category || ""}
+            onChange={async (e) => {
+              const category = e.target.value;
+              try {
+                await act("category", { id: selected.id, category });
+                setSelected({ ...selected, category });
+              } catch {}
+            }}
+          >
+            <option value="">未分类</option>
+            {["课程大纲", "讲义", "练习", "作业", "考试", "参考资料"].map(
+              (c) => (
+                <option key={c}>{c}</option>
+              ),
+            )}
+          </select>
+        </label>
+        <button
+          className="btn small"
+          disabled={!documentText || !!busy}
+          onClick={() => setConsent("organize")}
+        >
+          <Sparkles aria-hidden="true" />
+          生成 AI 整理建议
+        </button>
+        {categorySuggestion && (
+          <div className="category-result">
+            <strong>{categorySuggestion.category}</strong>
+            <br />
+            建议名称：{categorySuggestion.suggestedName}
+            <br />
+            {categorySuggestion.reason}
+            <br />
+            <button
+              className="btn small"
+              onClick={() => {
+                run(
+                  "category",
+                  {
+                    id: selected.id,
+                    category: categorySuggestion.category,
+                    suggestedName: categorySuggestion.suggestedName,
+                  },
+                  "分类已应用，原文件名保持不变",
+                );
+                setSelected({
+                  ...selected,
+                  category: categorySuggestion.category,
+                });
+              }}
+            >
+              应用分类标签
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
   const taskRows = (tasks: Item[]) => (
     <div className="task-list">
       {tasks.length ? (
@@ -562,16 +807,20 @@ function App() {
       </a>
       {!native && (
         <div className="native-preview">
-          界面预览 · 文件、Canvas 和 AI 操作请在 Mac App 中使用
+          {previewMode
+            ? "合成资料预览 · 所有数据均为虚构"
+            : "界面预览 · 文件、Canvas 和 AI 操作请在 Mac App 中使用"}
         </div>
       )}
-      <div className="shell">
+      <div className={`shell page-${page}`}>
         <aside className="sidebar">
           <div className="brand">
-            <span className="brandmark">P</span>
+            <span className="brandmark">
+              <BookOpen aria-hidden="true" />
+            </span>
             <div>
               <strong>PolyU Localized</strong>
-              <small>YOUR STUDY WORKSPACE</small>
+              <small>CANVAS · LOCAL</small>
             </div>
           </div>
           <div className="nav-caption">学习工作台</div>
@@ -593,15 +842,10 @@ function App() {
           </nav>
           <div className="sidebar-foot">
             <div className="local-card">
-              <strong>
-                <span className="online-dot" />
-                资料保存在本机
-              </strong>
-              <p>
-                你的文件，你的 AI。
-                <br />
-                按自己的节奏安排学习。
-              </p>
+              <span className="online-dot" />
+              <span>
+                {state.workspace.connected ? "Canvas 已连接" : "本地工作区"}
+              </span>
             </div>
             <button
               className="demo-link"
@@ -619,7 +863,7 @@ function App() {
               </button>
             )}
             <div className="sidebar-version">
-              <span>LOCAL FIRST</span>
+              <span>资料保存在本机</span>
               <span>v{state.version}</span>
             </div>
           </div>
@@ -627,13 +871,17 @@ function App() {
         <div className="workspace">
           <header className="topbar">
             <div className="breadcrumb">
-              <span>工作台</span>
-              <span>/</span>
               <strong>{title}</strong>
+              <span className="toolbar-context">
+                {page === "files"
+                  ? `${fileMatches.length} 份资料`
+                  : "学习工作区"}
+              </span>
             </div>
             <div className="top-actions">
               <button
                 className="top-search"
+                aria-label="查找课程资料，快捷键 Command K"
                 onClick={() => {
                   changePage("files");
                   setTimeout(
@@ -678,11 +926,11 @@ function App() {
                     · 香港时间
                   </div>
                 )}
-                <h1>{page === "home" ? "你好，开始今天的学习。" : title}</h1>
+                <h1>{page === "home" ? "今天" : title}</h1>
                 <p>
                   {
                     {
-                      home: "课程资料和学习安排，在这里连接起来。",
+                      home: "查看近期安排，继续你的学习。",
                       files: "原始资料保存在文件夹，分类与索引由工作台管理。",
                       review: "每一个日期，都应该有可以核对的出处。",
                       calendar: "看见截止日期，也为学习留出时间。",
@@ -794,45 +1042,31 @@ function App() {
               <>
                 {page === "home" && (
                   <>
-                    <section className="hero">
-                      <div className="hero-copy">
-                        <div className="eyebrow">
-                          LESS SORTING. MORE LEARNING.
-                        </div>
-                        <h2>把课程资料，变成下一步。</h2>
+                    <section className="workspace-brief">
+                      <div className="brief-icon">
+                        <Sparkles aria-hidden="true" />
+                      </div>
+                      <div>
+                        <h2>
+                          {pending.length
+                            ? `${pending.length} 条安排等待核对`
+                            : "从课程资料开始"}
+                        </h2>
                         <p>
-                          让 AI 帮你发现 syllabus 中的考试和 DDL。
-                          <br />
-                          你核对原文，工作台记住安排。
+                          {pending.length
+                            ? "查看来源和日期，确认后加入你的任务与日历。"
+                            : "选择 syllabus，让自己的 AI 帮你发现考试和截止日期。"}
                         </p>
-                        <div className="hero-actions">
-                          <button
-                            className="btn primary small"
-                            onClick={() => changePage("files")}
-                          >
-                            <FolderOpen aria-hidden="true" />
-                            打开资料库
-                          </button>
-                          <button
-                            className="btn small"
-                            onClick={() => changePage("settings")}
-                          >
-                            <Sparkles aria-hidden="true" />
-                            设置我的 AI
-                          </button>
-                        </div>
                       </div>
-                      <div className="hero-art" aria-hidden="true">
-                        <div className="orbit" />
-                        <div className="orbit small" />
-                        <div className="paper">
-                          <BookOpen aria-hidden="true" />
-                          <div className="paper-line" />
-                          <div className="paper-line" />
-                          <div className="paper-line short" />
-                        </div>
-                        <span className="spark">✧</span>
-                      </div>
+                      <button
+                        className="btn"
+                        onClick={() =>
+                          changePage(pending.length ? "review" : "files")
+                        }
+                      >
+                        {pending.length ? "核对安排" : "浏览资料"}
+                        <ChevronRight aria-hidden="true" />
+                      </button>
                     </section>
                     <div className="stats">
                       {[
@@ -971,7 +1205,10 @@ function App() {
                                 份本地资料
                               </small>
                             </div>
-                            <ArrowUpRight aria-hidden="true" className="arrow" />
+                            <ArrowUpRight
+                              aria-hidden="true"
+                              className="arrow"
+                            />
                           </button>
                         ))}
                       </div>
@@ -984,111 +1221,220 @@ function App() {
                   </>
                 )}
                 {page === "files" && (
-                  <section className="panel">
-                    <div className="toolbar">
-                      <div className="search-field">
-                        <Search aria-hidden="true" />
-                        <input
-                          id="file-search"
-                          aria-label="搜索资料"
-                          placeholder="搜索文件名、课程或分类…"
-                          value={query}
-                          onChange={(e) => {
-                            setQuery(e.target.value);
-                            setFilePage(0);
-                          }}
-                        />
-                      </div>
-                      <select
-                        aria-label="筛选课程"
-                        value={course}
-                        onChange={(e) => {
-                          setCourse(e.target.value);
+                  <section
+                    className={`finder ${selected ? "has-selection" : ""}`}
+                  >
+                    <aside className="finder-courses" aria-label="课程文件夹">
+                      <div className="rail-caption">课程文件夹</div>
+                      <button
+                        className={!course ? "active" : ""}
+                        aria-pressed={!course}
+                        onClick={() => {
+                          setCourse("");
                           setFilePage(0);
+                          setSelected(null);
                         }}
                       >
-                        <option value="">所有课程</option>
-                        {courses.map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                      <button
-                        className="btn small"
-                        onClick={() =>
-                          run("choose_folder", {}, "已切换资料目录")
-                        }
-                      >
                         <FolderOpen aria-hidden="true" />
-                        选择文件夹
+                        <span>所有资料</span>
+                        <small>{state.files.length}</small>
                       </button>
-                    </div>
-                    <table className="file-table">
-                      <thead>
-                        <tr>
-                          <th>文件</th>
-                          <th>课程</th>
-                          <th>分类</th>
-                          <th>大小</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {fileMatches
-                          .slice(filePage * 40, filePage * 40 + 40)
-                          .map((f) => (
-                            <tr key={f.id}>
-                              <td>
-                                <button
-                                  className="file-name"
-                                  onClick={() => setSelected(f)}
-                                >
-                                  <span className={`ext ${f.ext}`}>
-                                    {f.ext?.toUpperCase() || "FILE"}
-                                  </span>
-                                  <span>
-                                    {f.name}
-                                    {f.demo && " · 演示"}
-                                  </span>
-                                </button>
-                              </td>
-                              <td className="file-course" title={f.course}>
-                                {f.course}
-                              </td>
-                              <td>{f.category || "未分类"}</td>
-                              <td>{size(f.size)}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                    {!fileMatches.length && (
-                      <div className="empty">
-                        <FolderOpen aria-hidden="true" />
-                        <strong>这里还没有资料</strong>选择已有文件夹、同步
-                        Canvas，或载入合成演示。
+                      {courses.map((c) => (
+                        <button
+                          key={c}
+                          title={c}
+                          className={course === c ? "active" : ""}
+                          aria-pressed={course === c}
+                          onClick={() => {
+                            setCourse(c);
+                            setFilePage(0);
+                            setSelected(null);
+                          }}
+                        >
+                          <BookOpen aria-hidden="true" />
+                          <span>{c}</span>
+                          <small>
+                            {state.files.filter((f) => f.course === c).length}
+                          </small>
+                        </button>
+                      ))}
+                      <div className="rail-note">
+                        <ShieldCheck aria-hidden="true" />
+                        <span>原始文件保存在你的文件夹</span>
                       </div>
-                    )}
-                    <div className="pagination">
-                      <span>
-                        {fileMatches.length} 份资料 · 第 {filePage + 1} 页
-                      </span>
-                      <div>
+                    </aside>
+                    <div className="finder-list">
+                      <div className="toolbar">
+                        <div className="search-field">
+                          <Search aria-hidden="true" />
+                          <input
+                            id="file-search"
+                            aria-label="搜索资料"
+                            placeholder="搜索文件名、课程或分类…"
+                            value={query}
+                            onChange={(e) => {
+                              setQuery(e.target.value);
+                              setFilePage(0);
+                            }}
+                          />
+                        </div>
                         <button
-                          className="icon-btn"
-                          aria-label="上一页"
-                          disabled={filePage === 0}
-                          onClick={() => setFilePage((p) => p - 1)}
+                          className="btn small"
+                          onClick={() =>
+                            run("choose_folder", {}, "已切换资料目录")
+                          }
                         >
-                          <ChevronLeft aria-hidden="true" />
-                        </button>{" "}
-                        <button
-                          className="icon-btn"
-                          aria-label="下一页"
-                          disabled={(filePage + 1) * 40 >= fileMatches.length}
-                          onClick={() => setFilePage((p) => p + 1)}
-                        >
-                          <ChevronRight aria-hidden="true" />
+                          <FolderOpen aria-hidden="true" />
+                          选择文件夹
                         </button>
                       </div>
+                      <div className="file-table-scroll">
+                        <table className="file-table">
+                          <thead>
+                            <tr>
+                              <th>文件</th>
+
+                              <th>分类</th>
+                              <th>大小</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fileMatches
+                              .slice(filePage * 40, filePage * 40 + 40)
+                              .map((f) => (
+                                <tr
+                                  key={f.id}
+                                  className={
+                                    selected?.id === f.id ? "selected" : ""
+                                  }
+                                >
+                                  <td>
+                                    <button
+                                      aria-pressed={selected?.id === f.id}
+                                      className="file-name"
+                                      title={f.name}
+                                      onClick={() => setSelected(f)}
+                                    >
+                                      <span className={`ext ${f.ext}`}>
+                                        {f.ext?.toUpperCase() || "FILE"}
+                                      </span>
+                                      <span>
+                                        {f.name}
+                                        {f.demo && " · 演示"}
+                                        <small>{f.course}</small>
+                                      </span>
+                                    </button>
+                                  </td>
+                                  <td>{f.category || "未分类"}</td>
+                                  <td>{size(f.size)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {!fileMatches.length && (
+                        <div className="empty">
+                          <FolderOpen aria-hidden="true" />
+                          <strong>
+                            {query || course
+                              ? "没有找到匹配的资料"
+                              : "这里还没有资料"}
+                          </strong>
+                          {query || course
+                            ? "试试其他关键词，或查看所有课程。"
+                            : "接入已有资料文件夹，开始建立你的资料库。"}
+                          <br />
+                          <button
+                            className="btn small"
+                            onClick={() => {
+                              if (query || course) {
+                                setQuery("");
+                                setCourse("");
+                                setFilePage(0);
+                                setSelected(null);
+                              } else
+                                run("choose_folder", {}, "资料文件夹已接入");
+                            }}
+                          >
+                            {query || course ? "清除筛选" : "选择资料文件夹"}
+                          </button>
+                        </div>
+                      )}
+                      <div className="pagination">
+                        <span>
+                          {fileMatches.length} 份资料 · 第 {filePage + 1} 页
+                        </span>
+                        <div>
+                          <button
+                            className="icon-btn"
+                            aria-label="上一页"
+                            disabled={filePage === 0}
+                            onClick={() => setFilePage((p) => p - 1)}
+                          >
+                            <ChevronLeft aria-hidden="true" />
+                          </button>{" "}
+                          <button
+                            className="icon-btn"
+                            aria-label="下一页"
+                            disabled={(filePage + 1) * 40 >= fileMatches.length}
+                            onClick={() => setFilePage((p) => p + 1)}
+                          >
+                            <ChevronRight aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
+                    <aside
+                      className="finder-inspector"
+                      aria-label="文件检查器"
+                      data-inspector-tab={inspectorTab}
+                    >
+                      <div className="inspector-head">
+                        <h2>文件检查器</h2>
+                        {selected && (
+                          <button
+                            className="icon-btn"
+                            aria-label="关闭文件检查器"
+                            onClick={() => setSelected(null)}
+                          >
+                            <X aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      {selected ? (
+                        <>
+                          <div className="inspector-title">
+                            <FileText aria-hidden="true" />
+                            <h3>{selected.name}</h3>
+                          </div>
+                          <div
+                            className="inspector-tabs filter-pills"
+                            aria-label="检查器视图"
+                          >
+                            {[
+                              ["preview", "正文预览"],
+                              ["actions", "文件与 AI"],
+                            ].map(([id, label]) => (
+                              <button
+                                key={id}
+                                aria-pressed={inspectorTab === id}
+                                className={inspectorTab === id ? "active" : ""}
+                                onClick={() => setInspectorTab(id)}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          {fileDetail}
+                        </>
+                      ) : (
+                        <div className="inspector-empty">
+                          <FileText aria-hidden="true" />
+                          <h3>选择一份资料</h3>
+                          <p>查看正文与来源，提取安排，或添加分类标签。</p>
+                        </div>
+                      )}
+                    </aside>
                   </section>
                 )}
                 {page === "review" && (
@@ -1141,7 +1487,31 @@ function App() {
                   </>
                 )}
                 {page === "tasks" && (
-                  <section className="panel">
+                  <section className="panel reminders-panel">
+                    <div className="reminders-overview">
+                      <div>
+                        <CheckSquare aria-hidden="true" />
+                        <span>
+                          待完成<strong>{todo.length}</strong>
+                        </span>
+                      </div>
+                      <div>
+                        <CalendarDays aria-hidden="true" />
+                        <span>
+                          今天
+                          <strong>
+                            {todo.filter((t) => t.date === today()).length}
+                          </strong>
+                        </span>
+                      </div>
+                      <div>
+                        <Clock aria-hidden="true" />
+                        <span>
+                          日期待定
+                          <strong>{todo.filter((t) => !t.date).length}</strong>
+                        </span>
+                      </div>
+                    </div>
                     <div className="toolbar">
                       <div className="filter-pills">
                         {[
@@ -1152,6 +1522,7 @@ function App() {
                           <button
                             key={id}
                             className={taskFilter === id ? "active" : ""}
+                            aria-pressed={taskFilter === id}
                             onClick={() => setTaskFilter(id)}
                           >
                             {label}
@@ -1172,94 +1543,111 @@ function App() {
                   </section>
                 )}
                 {page === "calendar" && (
-                  <section className="panel calendar-panel">
-                    <div className="calendar-title">
-                      <h2>
-                        {month.getFullYear()} 年 {month.getMonth() + 1} 月
-                      </h2>
-                      <div className="calendar-controls">
-                        <button
-                          className="icon-btn"
-                          aria-label="上个月"
-                          onClick={() =>
-                            setMonth(
-                              new Date(
-                                month.getFullYear(),
-                                month.getMonth() - 1,
-                                1,
-                                12,
-                              ),
-                            )
-                          }
-                        >
-                          <ChevronLeft aria-hidden="true" />
-                        </button>
-                        <button
-                          className="btn small"
-                          onClick={() =>
-                            setMonth(new Date(today() + "T12:00:00"))
-                          }
-                        >
-                          今天
-                        </button>
-                        <button
-                          className="icon-btn"
-                          aria-label="下个月"
-                          onClick={() =>
-                            setMonth(
-                              new Date(
-                                month.getFullYear(),
-                                month.getMonth() + 1,
-                                1,
-                                12,
-                              ),
-                            )
-                          }
-                        >
-                          <ChevronRight aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="calendar-grid">
-                      {"一二三四五六日".split("").map((d) => (
-                        <div className="weekday" key={d}>
-                          周{d}
-                        </div>
-                      ))}
-                      {days(month).map((d) => (
-                        <div
-                          key={dayKey(d)}
-                          className={`day-cell ${d.getMonth() !== month.getMonth() ? "outside" : ""} ${dayKey(d) === today() ? "today" : ""}`}
-                        >
+                  <div className="calendar-layout">
+                    <section className="panel calendar-panel">
+                      <div className="calendar-title">
+                        <h2>
+                          {month.getFullYear()} 年 {month.getMonth() + 1} 月
+                        </h2>
+                        <div className="calendar-controls">
                           <button
-                            className="plain day-num"
-                            aria-label={`在 ${dayKey(d)} 添加安排`}
-                            onClick={() => setEdit({ id: "", date: dayKey(d) })}
+                            className="icon-btn"
+                            aria-label="上个月"
+                            onClick={() =>
+                              setMonth(
+                                new Date(
+                                  month.getFullYear(),
+                                  month.getMonth() - 1,
+                                  1,
+                                  12,
+                                ),
+                              )
+                            }
                           >
-                            {d.getDate()}
+                            <ChevronLeft aria-hidden="true" />
                           </button>
-                          {state.tasks
-                            .filter((t) => t.date === dayKey(d))
-                            .sort(sortTasks)
-                            .map((t) => (
-                              <button
-                                className={`cal-event ${t.kind} ${t.completed ? "done" : ""}`}
-                                key={t.id}
-                                title={`${t.time || "全天"} ${t.title}`}
-                                onClick={() => setEdit(t)}
-                              >
-                                {t.time && `${t.time} `}
-                                {t.title}
-                              </button>
-                            ))}
+                          <button
+                            className="btn small"
+                            onClick={() =>
+                              setMonth(new Date(today() + "T12:00:00"))
+                            }
+                          >
+                            今天
+                          </button>
+                          <button
+                            className="icon-btn"
+                            aria-label="下个月"
+                            onClick={() =>
+                              setMonth(
+                                new Date(
+                                  month.getFullYear(),
+                                  month.getMonth() + 1,
+                                  1,
+                                  12,
+                                ),
+                              )
+                            }
+                          >
+                            <ChevronRight aria-hidden="true" />
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                    <p className="cal-summary">
-                      香港时间 · 无日期任务仅在任务清单中显示 ·
-                      导出包含有日期的未完成安排
-                    </p>
-                  </section>
+                      </div>
+                      <div className="calendar-grid">
+                        {"一二三四五六日".split("").map((d) => (
+                          <div className="weekday" key={d}>
+                            周{d}
+                          </div>
+                        ))}
+                        {days(month).map((d) => (
+                          <div
+                            key={dayKey(d)}
+                            className={`day-cell ${d.getMonth() !== month.getMonth() ? "outside" : ""} ${dayKey(d) === today() ? "today" : ""}`}
+                          >
+                            <button
+                              className="plain day-num"
+                              aria-label={`在 ${dayKey(d)} 添加安排`}
+                              onClick={() =>
+                                setEdit({ id: "", date: dayKey(d) })
+                              }
+                            >
+                              {d.getDate()}
+                            </button>
+                            {state.tasks
+                              .filter((t) => t.date === dayKey(d))
+                              .sort(sortTasks)
+                              .map((t) => (
+                                <button
+                                  className={`cal-event ${t.kind} ${t.completed ? "done" : ""}`}
+                                  key={t.id}
+                                  title={`${t.time || "全天"} ${t.title}`}
+                                  onClick={() => setEdit(t)}
+                                >
+                                  {t.time && `${t.time} `}
+                                  {t.title}
+                                </button>
+                              ))}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="cal-summary">
+                        香港时间 · 无日期任务仅在任务清单中显示 ·
+                        导出包含有日期的未完成安排
+                      </p>
+                    </section>
+                    <aside className="panel agenda">
+                      <div className="panel-head">
+                        <h2>本月安排</h2>
+                        <small>香港时间</small>
+                      </div>
+                      {taskRows(
+                        todo.filter((t) =>
+                          t.date?.startsWith(
+                            `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`,
+                          ),
+                        ),
+                      )}
+                    </aside>
+                  </div>
                 )}
                 {page === "settings" && (
                   <SettingsPage
@@ -1306,146 +1694,13 @@ function App() {
           }
         />
       )}
-      {selected && !consent && (
+      {selected && page !== "files" && !consent && (
         <Modal
           wide
           title={selected.name || "课程资料"}
           onClose={() => setSelected(null)}
         >
-          <div className="modal-body file-detail">
-            <div className="file-preview">
-              {docError ? (
-                <div className="result-error">
-                  {docError}
-                  <br />
-                  可以用系统默认应用打开原文件。
-                </div>
-              ) : documentText ? (
-                documentText.pages.map((p) => (
-                  <div className="page-text" key={p.page}>
-                    <strong>
-                      第 {p.page} 页 · {p.method || "文字"}
-                    </strong>
-                    <pre>{p.text || "本页没有可读文字"}</pre>
-                  </div>
-                ))
-              ) : (
-                <div className="loading">
-                  <RefreshCw aria-hidden="true" />
-                  正在本地读取文字与 OCR…
-                </div>
-              )}
-            </div>
-            <div className="file-info">
-              <Badge
-                demo={selected.demo}
-                kind={selected.category || "未分类"}
-              />
-              <small>
-                {selected.course}
-                <br />
-                {selected.relative}
-                <br />
-                {size(selected.size)}
-              </small>
-              <button
-                className="btn"
-                onClick={() => run("open_file", { id: selected.id })}
-              >
-                <ArrowUpRight aria-hidden="true" />
-                打开原文件
-              </button>
-              <button
-                className="btn"
-                onClick={() => run("reveal_file", { id: selected.id })}
-              >
-                <FolderOpen aria-hidden="true" />在 Finder 中显示
-              </button>
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-              <h3>发现学习安排</h3>
-              <button
-                className="btn soft"
-                disabled={!!busy || !documentText}
-                onClick={() => void analyze("local")}
-              >
-                <Search aria-hidden="true" />
-                {busy === "analyze" ? "正在分析…" : "本地规则提取日期"}
-              </button>
-              <button
-                className="btn primary"
-                disabled={!!busy || !documentText}
-                onClick={() => setConsent("deadlines")}
-              >
-                <Sparkles aria-hidden="true" />
-                用我的 AI 分析
-              </button>
-              <p className="ai-disclosure">
-                结果先进入待确认。AI 只在你主动确认后接收正文，不会收到 Canvas
-                会话。
-              </p>
-              <h3>整理资料</h3>
-              <label className="field">
-                分类标签
-                <select
-                  value={selected.category || ""}
-                  onChange={async (e) => {
-                    const category = e.target.value;
-                    try {
-                      await act("category", { id: selected.id, category });
-                      setSelected({ ...selected, category });
-                    } catch {}
-                  }}
-                >
-                  <option value="">未分类</option>
-                  {["课程大纲", "讲义", "练习", "作业", "考试", "参考资料"].map(
-                    (c) => (
-                      <option key={c}>{c}</option>
-                    ),
-                  )}
-                </select>
-              </label>
-              <button
-                className="btn small"
-                disabled={!documentText || !!busy}
-                onClick={() => setConsent("organize")}
-              >
-                <Sparkles aria-hidden="true" />
-                生成 AI 整理建议
-              </button>
-              {categorySuggestion && (
-                <div className="category-result">
-                  <strong>{categorySuggestion.category}</strong>
-                  <br />
-                  建议名称：{categorySuggestion.suggestedName}
-                  <br />
-                  {categorySuggestion.reason}
-                  <br />
-                  <button
-                    className="btn small"
-                    onClick={() => {
-                      run(
-                        "category",
-                        {
-                          id: selected.id,
-                          category: categorySuggestion.category,
-                          suggestedName: categorySuggestion.suggestedName,
-                        },
-                        "分类已应用，原文件名保持不变",
-                      );
-                      setSelected({
-                        ...selected,
-                        category: categorySuggestion.category,
-                      });
-                    }}
-                  >
-                    应用分类标签
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          {fileDetail}
         </Modal>
       )}
       {consent && selected && (
@@ -1526,7 +1781,8 @@ function Review({
       <div className="source">
         <FileText aria-hidden="true" />
         <button className="plain" onClick={open}>
-          {f.filename} · 第 {f.page} 页
+          {f.filename || "Canvas 作业"}
+          {f.page ? ` · 第 ${f.page} 页` : ""}
         </button>
       </div>
       <blockquote className="quote">{f.excerpt}</blockquote>
@@ -1902,7 +2158,8 @@ function SettingsPage({
             <li>
               <CircleHelp aria-hidden="true" />
               <div>
-                <strong>Prototype v0.1.0</strong>Apple Silicon · macOS 13+
+                <strong>Prototype v{state.version}</strong>Apple Silicon · macOS
+                13+
                 <br />
                 原型未进行 Apple 公证。
               </div>
@@ -1913,4 +2170,6 @@ function SettingsPage({
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+const root = createRoot(document.getElementById("root")!);
+root.render(<App />);
+if (import.meta.hot) import.meta.hot.dispose(() => root.unmount());

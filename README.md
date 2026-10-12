@@ -2,7 +2,15 @@
 
 面向 Apple Silicon Mac 的本地学习工作台。连接 PolyU Canvas，把课程资料下载到自己的文件夹，再用自己的 AI 提取考试、作业 DDL 和学习安排。所有建议经过核对后才进入任务与日历。
 
-当前版本：**v0.1 桌面原型**，支持 **macOS 13+**。学生制作，非香港理工大学官方应用。
+当前版本：**v0.1.1 桌面原型**，支持 **macOS 13+**。学生制作，非香港理工大学官方应用。
+
+## 界面
+
+采用 macOS 风格的侧边栏、文件检查器、任务列表和月历，红色系参考 PolyU 官网。界面规范见 [DESIGN.md](DESIGN.md)。以下截图使用合成资料。
+
+![启动台](docs/screenshots/home.jpg)
+
+![资料库与文件检查器](docs/screenshots/library.jpg)
 
 ## 可以做什么
 
@@ -63,7 +71,7 @@ npm ci
 npm run desktop
 ```
 
-原生组件和应用图标会在启动、打包前自动生成。
+原生组件和应用图标会在启动、打包前自动生成。用 `npm run dev` 启动浏览器预览后，访问 `http://127.0.0.1:1420/?preview=1` 可查看合成资料界面；文件、Canvas 和 AI 操作需在桌面 App 中使用。
 
 ```sh
 npm run bundle

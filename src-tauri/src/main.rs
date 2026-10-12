@@ -27,7 +27,7 @@ async fn dispatch(
             let workspace = core.workspace()?;
             let jobs = core.job.lock().unwrap().clone();
             Ok(
-                json!({"settings":settings,"workspace":workspace,"workspaces":core.list("workspace")?,"files":core.scoped("file")?.into_iter().filter(|f|f["available"]==true).collect::<Vec<_>>(),"tasks":core.scoped("task")?,"findings":core.scoped("finding")?,"courses":core.scoped("course")?,"job":jobs,"version":"0.1.0"}),
+                json!({"settings":settings,"workspace":workspace,"workspaces":core.list("workspace")?,"files":core.scoped("file")?.into_iter().filter(|f|f["available"]==true).collect::<Vec<_>>(),"tasks":core.scoped("task")?,"findings":core.scoped("finding")?,"courses":core.scoped("course")?,"job":jobs,"version":env!("CARGO_PKG_VERSION")}),
             )
         }
         "default_folder" => {
