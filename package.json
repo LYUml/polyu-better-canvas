@@ -1,9 +1,28 @@
 {
-  "name": "polyu-canvas-course-fetch",
-  "version": "1.0.0",
-  "description": "Fetch all PolyU Canvas course materials visible to the signed-in user, without an API token.",
-  "main": "src/index.js",
-  "scripts": { "start": "node src/index.js", "check": "node --check src/index.js" },
-  "license": "MIT",
-  "dependencies": { "playwright-core": "^1.55.0" }
+  "name": "polyu-canvas-localized",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "tauri": "tauri",
+    "desktop": "tauri dev",
+    "bundle": "tauri build",
+    "native": "bash scripts/build-native.sh"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "@vitejs/plugin-react": "^4.3.0"
+  }
 }

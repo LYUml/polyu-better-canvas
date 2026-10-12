@@ -1,4 +1,5 @@
 node_modules/
+.npm-cache/
 config.json
 downloads/
 # Per-user course content (never commit)
@@ -7,3 +8,22 @@ courses/
 .canvas-sync-manifest.json
 .DS_Store
 Thumbs.db
+
+# Local workspace database, secrets and demos
+.local/
+
+dist/
+src-tauri/target/
+src-tauri/resources/NativeBridge
+src-tauri/resources/DocumentReader
+src-tauri/icons/
+release/
+
+src-tauri/resources/NativeBridge.app/
+
+# Editor and temporary build files
+*.part
+.env
+.env.*
+__pycache__/
+src-tauri/gen/schemas/
